@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Housekeeping Benchmark | CareNumerix Tools</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&family=Source+Serif+4:wght@500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <a class="brand" href="https://www.carenumerix.com/">CARENUMERIX</a>
+    <nav class="sans">
+      <a href="https://www.carenumerix.com/services">Services</a>
+      <a href="index.html">Tools</a>
+      <a href="https://www.carenumerix.com/contact">Contact</a>
+    </nav>
+  </header>
+  <main class="wrap">
+    <p class="meta" style="letter-spacing:.08em;text-transform:uppercase;color:var(--teal);font-weight:700;margin:0 0 .4rem;">Tools / Housekeeping</p>
+    <h1>Housekeeping department benchmark</h1>
+    <p class="lede">Study hospital versus a five-facility peer group. Primary benchmark is the pooled (volume-weighted) average. Salary cost per square foot is hours/sqft × wage rate; that identity splits into a productivity variance and a wage-rate variance.</p>
+    <div class="card">
+      <div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;">
+        <button type="button" onclick="resetDemo()">Load Emerson demo data</button>
+        <button type="button" class="ghost" onclick="addPeer()">Add peer row</button>
+        <button type="button" class="ghost" onclick="window.print()">Print / save PDF</button>
+        <span class="note">Yellow-tint cells are inputs. Totals and variances recalculate as you type. Data does not leave this page.</span>
+      </div>
+    </div>
+    <h2>Source data (annual housekeeping)</h2>
+    <div class="card" style="overflow:auto;">
+      <table id="src"><thead><tr><th>Facility</th><th>Role</th><th>Salary $</th><th>Non-salary $</th><th>Hours</th><th>Sqft</th><th></th></tr></thead><tbody></tbody></table>
+    </div>
+    <h2>Headline comparison</h2>
+    <div class="grid grid-5" id="kpis"></div>
+    <h2>Unit metrics</h2>
+    <div class="card" style="overflow:auto;"><table id="units"></table></div>
+    <h2>Annual dollar impact at study square footage</h2>
+    <div class="card" style="overflow:auto;"><table id="impact"></table></div>
+    <h2>Salary variance bridge</h2>
+    <p class="note">Primary split uses the pooled peer wage as the standard: productivity = (Ha − Hp) × Rp; wage rate = (Ra − Rp) × Ha. The peer mix residual appears only against the simple average of peer salary/sqft. It is a property of the peer set, not of the study hospital.</p>
+    <div class="card" style="overflow:auto;"><table id="bridge"></table></div>
+    <p class="note">Illustrative model for discussion. Does not adjust for union status, contract mix, building age, or case mix. Not an audit or an opinion on cost report allowability.</p>
+  </main>
+  <footer>CareNumerix · <a href="index.html">All tools</a> · <a href="https://www.carenumerix.com/contact">Request an engagement</a></footer>
+<script>
+const DEMO = [
+  {name:"Emerson", role:"study", sal:2179287, nw:1661607, hrs:88608, sq:376819},
+  {name:"Lawrence General", role:"peer", sal:2406022, nw:312651, hrs:106506, sq:429304},
+  {name:"Winchester", role:"peer", sal:2726976, nw:2098662, hrs:105872, sq:321556},
+  {name:"Newton Wellesley", role:"peer", sal:5273159, nw:2243807, hrs:204682, sq:671238},
+  {name:"South Shore", role:"peer", sal:6524069, nw:6967688, hrs:275955, sq:971974},
+  {name:"Mount Auburn", role:"peer", sal:3007007, nw:811883, hrs:161889, sq:689852}
+];
+let rows = JSON.parse(JSON.stringify(DEMO));
+const money = n => isFinite(n) ? n.toLocaleString("en-US",{style:"currency",currency:"USD",maximumFractionDigits:0}) : "—";
+const money2 = n => isFinite(n) ? n.toLocaleString("en-US",{style:"currency",currency:"USD",minimumFractionDigits:2,maximumFractionDigits:2}) : "—";
+const money3 = n => isFinite(n) ? n.toLocaleString("en-US",{style:"currency",currency:"USD",minimumFractionDigits:3,maximumFractionDigits:3}) : "—";
+const dec4 = n => isFinite(n) ? n.toFixed(4) : "—";
+const cls = n => n < -1e-9 ? "fav" : n > 1e-9 ? "unf" : "";
+const read = n => n < -1e-9 ? "Favorable" : n > 1e-9 ? "Unfavorable" : "In line";
+function resetDemo(){ rows = JSON.parse(JSON.stringify(DEMO)); renderAll(); }
+function addPeer(){ rows.push({name:"New peer", role:"peer", sal:0, nw:0, hrs:0, sq:0}); renderAll(); }
+function delRow(i){ if(rows.length<2) return; rows.splice(i,1); renderAll(); }
+function setStudy(i){ rows.forEach((r,idx)=> r.role = idx===i ? "study" : "peer"); renderAll(); }
+function upd(i, field, val){
+  if(field==="name") rows[i].name = val;
+  else rows[i][field] = parseFloat(String(val).replace(/,/g,"")) || 0;
+  calc(); paintResults();
+}
+function ratios(r){
+  const tot = r.sal + r.nw;
+  return { tot, totSq: r.sq? tot/r.sq : NaN, salSq: r.sq? r.sal/r.sq : NaN, nwSq: r.sq? r.nw/r.sq : NaN, hSq: r.sq? r.hrs/r.sq : NaN, rate: r.hrs? r.sal/r.hrs : NaN };
+}
+function calc(){
+  const study = rows.find(r=>r.role==="study") || rows[0];
+  const peers = rows.filter(r=>r!==study);
+  const A = ratios(study);
+  const sum = peers.reduce((a,r)=>({sal:a.sal+r.sal,nw:a.nw+r.nw,hrs:a.hrs+r.hrs,sq:a.sq+r.sq}),{sal:0,nw:0,hrs:0,sq:0});
+  const P = { totSq: sum.sq? (sum.sal+sum.nw)/sum.sq : NaN, salSq: sum.sq? sum.sal/sum.sq : NaN, nwSq: sum.sq? sum.nw/sum.sq : NaN, hSq: sum.sq? sum.hrs/sum.sq : NaN, rate: sum.hrs? sum.sal/sum.hrs : NaN };
+  const list = peers.map(ratios);
+  const avg = k => list.length? list.reduce((s,x)=>s+(x[k]||0),0)/list.length : NaN;
+  const S = { totSq:avg("totSq"), salSq:avg("salSq"), nwSq:avg("nwSq"), hSq:avg("hSq"), rate:avg("rate") };
+  const prodPooled = (A.hSq - P.hSq) * P.rate;
+  const ratePooled = (A.rate - P.rate) * A.hSq;
+  const prodSimple = (A.hSq - S.hSq) * S.rate;
+  const rateSimple = (A.rate - S.rate) * A.hSq;
+  const mix = (S.hSq * S.rate) - S.salSq;
+  return {study, peers, sum, A, P, S, prodPooled, ratePooled, prodSimple, rateSimple, mix};
+}
+function renderSource(){
+  const tb = document.querySelector("#src tbody");
+  tb.innerHTML = rows.map((r,i)=>`
+    <tr class="${r.role==="study"?"study":""}">
+      <td><input type="text" value="${r.name.replace(/"/g,""")}" oninput="upd(${i},'name',this.value)"></td>
+      <td>
+        <select onchange="setStudy(${i})" ${r.role==="study"?"disabled":""}>
+          <option value="study" ${r.role==="study"?"selected":""}>Study (A)</option>
+          <option value="peer" ${r.role==="peer"?"selected":""}>Peer</option>
+        </select>
+      </td>
+      <td><input type="number" value="${r.sal}" oninput="upd(${i},'sal',this.value)"></td>
+      <td><input type="number" value="${r.nw}" oninput="upd(${i},'nw',this.value)"></td>
+      <td><input type="number" value="${r.hrs}" oninput="upd(${i},'hrs',this.value)"></td>
+      <td><input type="number" value="${r.sq}" oninput="upd(${i},'sq',this.value)"></td>
+      <td>${r.role==="peer"?`<button class="ghost" type="button" onclick="delRow(${i})">Remove</button>`:""}</td>
+    </tr>`).join("");
+}
+function paintResults(){
+  const m = calc();
+  const items = [
+    ["Total $/sqft", m.A.totSq, m.P.totSq, m.A.totSq-m.P.totSq],
+    ["Salary $/sqft", m.A.salSq, m.P.salSq, m.A.salSq-m.P.salSq],
+    ["Non-salary $/sqft", m.A.nwSq, m.P.nwSq, m.A.nwSq-m.P.nwSq],
+    ["Hours / sqft", m.A.hSq, m.P.hSq, m.A.hSq-m.P.hSq],
+    ["Wage $ / hour", m.A.rate, m.P.rate, m.A.rate-m.P.rate]
+  ];
+  document.getElementById("kpis").innerHTML = items.map(([lab,a,p,d],i)=>`
+    <div class="card kpi">
+      <div class="sub">${lab}</div>
+      <div class="val">${i===3?dec4(a):money2(a)}</div>
+      <div class="sub">Peer pooled ${i===3?dec4(p):money2(p)}</div>
+      <div class="${cls(d)}" style="margin-top:.35rem;padding:.2rem .4rem;border-radius:4px;">${i===3?dec4(d):money3(d)} · ${read(d)}</div>
+    </div>`).join("");
+  const unitRows = [["Study — "+m.study.name, m.A, "study"], ...m.peers.map(p=>[p.name, ratios(p), ""]), ["Peer pooled", m.P, "peer-tot"], ["Peer simple avg of ratios", m.S, ""]];
+  document.getElementById("units").innerHTML = `<thead><tr><th>Facility</th><th>Total $/sqft</th><th>Salary $/sqft</th><th>Non-sal $/sqft</th><th>Hours/sqft</th><th>Wage $/hr</th></tr></thead><tbody>${unitRows.map(([n,x,c])=>`<tr class="${c}"><td>${n}</td><td>${money2(x.totSq)}</td><td>${money2(x.salSq)}</td><td>${money2(x.nwSq)}</td><td>${dec4(x.hSq)}</td><td>${money2(x.rate)}</td></tr>`).join("")}</tbody>`;
+  const sq = m.study.sq;
+  const impact = [["Total housekeeping", m.study.sal+m.study.nw, m.P.totSq*sq],["Salary", m.study.sal, m.P.salSq*sq],["Non-salary", m.study.nw, m.P.nwSq*sq]];
+  document.getElementById("impact").innerHTML = `<thead><tr><th>Component</th><th>Study $</th><th>Peer-priced at study sqft</th><th>Variance</th><th>Reading</th></tr></thead><tbody>${impact.map(([n,a,p])=>`<tr><td>${n}</td><td>${money(a)}</td><td>${money(p)}</td><td class="${cls(a-p)}">${money(a-p)}</td><td>${read(a-p)}</td></tr>`).join("")}</tbody>`;
+  const br = [
+    ["Pooled benchmark","","",""],
+    ["Productivity (Ha − Hp) × Rp", m.prodPooled, m.prodPooled*sq, "Hours difference at peer wage"],
+    ["Wage rate (Ra − Rp) × Ha", m.ratePooled, m.ratePooled*sq, "Rate difference at study hours/sqft"],
+    ["Salary variance vs pooled", m.prodPooled+m.ratePooled, (m.prodPooled+m.ratePooled)*sq, "Ties to study salary/sqft − pooled salary/sqft"],
+    ["Simple-average benchmark (optional)","","",""],
+    ["Productivity vs simple avg H and R", m.prodSimple, m.prodSimple*sq, "(Ha − Hbar) × Rbar"],
+    ["Wage rate vs simple avg H and R", m.rateSimple, m.rateSimple*sq, "(Ra − Rbar) × Ha"],
+    ["Peer mix residual", m.mix, m.mix*sq, "Hbar×Rbar − avg of peer salary/sqft. Property of the peer set."],
+    ["Salary variance vs simple avg salary/sqft", m.prodSimple+m.rateSimple+m.mix, (m.prodSimple+m.rateSimple+m.mix)*sq, "Three lines sum to study − simple avg salary/sqft"]
+  ];
+  document.getElementById("bridge").innerHTML = `<thead><tr><th>Component</th><th>$ / sqft</th><th>Annual $</th><th>Notes</th></tr></thead><tbody>${br.map((row)=>{
+    if(!row[1] && row[0].includes("benchmark")) return `<tr class="peer-tot"><td colspan="4">${row[0]}</td></tr>`;
+    return `<tr><td>${row[0]}</td><td class="${cls(row[1])}">${money3(row[1])}</td><td class="${cls(row[2])}">${money(row[2])}</td><td style="text-align:left">${row[3]}</td></tr>`;
+  }).join("")}</tbody>`;
+}
+function renderAll(){ renderSource(); paintResults(); }
+renderAll();
+</script>
+</body>
+</html>
